@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy the actual AI agent source code into the container
-COPY azure_comprehensive_sec_agent.py .
+COPY azure_security_agent.py .
 
 # Run the script interactively when the container fires up
-CMD ["python", "azure_comprehensive_sec_agent.py"]
+CMD ["python", "azure_security_agent.py"]

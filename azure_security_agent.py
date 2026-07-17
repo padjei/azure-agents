@@ -14,7 +14,7 @@ session (or Managed Identity in the cloud) with no secrets in code.
 Run:
     az login
     export ANTHROPIC_API_KEY="sk-ant-..."   # or put it in a local .env file
-    python azure_comprehensive_sec_agent.py
+    python azure_security_agent.py
 """
 
 import os
@@ -313,42 +313,72 @@ def audit_synapse_diagnostic_settings() -> str:
 
 
 @tool
-def generate_remediation_policy(framework_name: str) -> str:
+def generate_remediation_policy(framework_name: str, control: str = "network_boundary") -> str:
     """
-    Generates an Azure Policy rule definition (JSON structure) used to implement
-    and enforce security guardrails tailored to high-stakes compliance frameworks like HITRUST r2.
+    Generates an Azure Policy definition (JSON) that enforces a security guardrail for a
+    high-stakes compliance framework like HITRUST r2.
+
+    Args:
+        framework_name: The framework the guardrail maps to (e.g. "HITRUST r2").
+        control: Which guardrail to emit:
+            - "network_boundary" (default): Deny NSG rules that allow inbound traffic from
+              any source ("*"), preventing open ingress across a system boundary.
+            - "required_tags": Deny resources missing the HITRUST_Scope governance tag,
+              enforcing compliance scoping and inventory.
     """
+    control = (control or "network_boundary").strip().lower()
+
+    if control == "required_tags":
+        display_name = f"Enforce required HITRUST_Scope tag for {framework_name}"
+        policy_rule = {
+            "if": {
+                "allOf": [
+                    {
+                        "field": "tags['HITRUST_Scope']",
+                        "exists": "false"
+                    }
+                ]
+            },
+            "then": {
+                "effect": "Deny"
+            }
+        }
+    else:
+        control = "network_boundary"
+        display_name = f"Enforce Secure Network Boundaries and Identity for {framework_name}"
+        policy_rule = {
+            "if": {
+                "allOf": [
+                    {
+                        "field": "type",
+                        "equals": "Microsoft.Network/networkSecurityGroups"
+                    },
+                    {
+                        "field": "Microsoft.Network/networkSecurityGroups/securityRules/access",
+                        "equals": "Allow"
+                    },
+                    {
+                        "field": "Microsoft.Network/networkSecurityGroups/securityRules/direction",
+                        "equals": "Inbound"
+                    },
+                    {
+                        "field": "Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefix",
+                        "equals": "*"
+                    }
+                ]
+            },
+            "then": {
+                "effect": "Deny"
+            }
+        }
+
     policy_template = {
         "properties": {
-            "displayName": f"Enforce Secure Network Boundaries and Identity for {framework_name}",
+            "displayName": display_name,
             "policyType": "Custom",
             "mode": "Indexed",
-            "description": f"Enforces strict infrastructure requirements mapped directly to {framework_name} controls.",
-            "policyRule": {
-                "if": {
-                    "allOf": [
-                        {
-                            "field": "type",
-                            "equals": "Microsoft.Network/networkSecurityGroups"
-                        },
-                        {
-                            "field": "Microsoft.Network/networkSecurityGroups/securityRules/access",
-                            "equals": "Allow"
-                        },
-                        {
-                            "field": "Microsoft.Network/networkSecurityGroups/securityRules/direction",
-                            "equals": "Inbound"
-                        },
-                        {
-                            "field": "Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefix",
-                            "equals": "*"
-                        }
-                    ]
-                },
-                "then": {
-                    "effect": "Deny"
-                }
-            }
+            "description": f"Enforces strict infrastructure requirements ({control}) mapped directly to {framework_name} controls.",
+            "policyRule": policy_rule
         }
     }
     return json.dumps(policy_template, indent=2)

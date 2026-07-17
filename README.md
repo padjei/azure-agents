@@ -11,7 +11,7 @@ secrets are stored in code**.
 
 | File | Purpose |
 | ---- | ------- |
-| `azure_comprehensive_sec_agent.py` | **The agent.** Audits NSGs, Key Vault, Defender for Cloud, Resource Groups, Azure Policy, and Synapse diagnostic logging; generates remediation policy JSON. |
+| `azure_security_agent.py` | **The agent.** Audits NSGs, Key Vault, Defender for Cloud, Resource Groups, Azure Policy, and Synapse diagnostic logging; generates remediation policy JSON. |
 | `requirements.txt` | Pinned Python dependencies. |
 | `Dockerfile` / `docker-compose.yml` | Containerized runtime — run on any laptop with only Docker. |
 | `docs/hitrust_r2_retention_framework.md` | HITRUST r2 Synapse hardening, retention, and PRISMA maturity guidance. |
@@ -77,7 +77,7 @@ pip install -r requirements.txt
 export ANTHROPIC_API_KEY="sk-ant-..."   # or use the .env file
 az login
 
-python azure_comprehensive_sec_agent.py
+python azure_security_agent.py
 ```
 
 ## Example prompts
