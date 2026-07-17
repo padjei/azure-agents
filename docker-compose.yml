@@ -1,7 +1,7 @@
 services:
   agent:
     build: .
-    image: azure-sec-agent:latest
+    image: azure-agents:latest
     container_name: azure_security_ai_agent
     # Allows the interactive terminal loop to remain open for chatting with Claude
     stdin_open: true
@@ -18,7 +18,7 @@ services:
   # Launch with: docker compose run --rm data-architect
   data-architect:
     build: .
-    image: azure-sec-agent:latest
+    image: azure-agents:latest
     container_name: azure_data_architect_agent
     command: python data_architect_agent.py
     stdin_open: true

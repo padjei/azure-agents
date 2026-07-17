@@ -10,6 +10,9 @@ session — **no secrets are stored in code**. Two agents share one runtime/imag
 2. **Data Architect agent** (`data_architect_agent.py`) — assesses your data estate and designs
    scalable, secure data solutions (lakehouse layouts, dimensional models + DDL, ingestion pipelines).
 
+> **New here?** Read **[docs/USAGE.md](docs/USAGE.md)** for a step-by-step guide to running both
+> agents locally and verifying them **before** you deploy to GitHub.
+
 ## What's inside
 
 | File | Purpose |
@@ -18,6 +21,7 @@ session — **no secrets are stored in code**. Two agents share one runtime/imag
 | `data_architect_agent.py` | **Data Architect agent.** Discovers the data estate and designs medallion lakehouses, Kimball star schemas + Synapse DDL, and ETL/ELT pipeline blueprints. |
 | `requirements.txt` | Pinned Python dependencies. |
 | `Dockerfile` / `docker-compose.yml` | Containerized runtime — run on any laptop with only Docker. |
+| `docs/USAGE.md` | Step-by-step usage + a pre-deployment checklist (try locally before pushing). |
 | `docs/hitrust_r2_retention_framework.md` | HITRUST r2 Synapse hardening, retention, and PRISMA maturity guidance. |
 | `kql/*.kql` | Log Analytics audit queries for Synapse ETL egress and pipeline tampering. |
 | `infra/` | Bicep + CLI bootstrap and a DeployIfNotExists policy that establish and enforce Synapse diagnostic logging (see `infra/README.md`). |
@@ -128,5 +132,27 @@ Defaults to `claude-sonnet-4-6`. Override without editing code via the `CLAUDE_M
 ## Security notes
 
 - `.env` is git-ignored — your API key never reaches GitHub. Commit only `.env.example`.
-- The agent performs **read-only audits**; it drafts policy JSON but does not apply changes.
-- Azure permissions come from your signed-in identity; the agent can only see what you can.
+- The agents perform **read-only** discovery/audits; they draft policy JSON and design artifacts but do not change your Azure resources.
+- Azure permissions come from your signed-in identity; the agents can only see what you can.
+
+## Deploy to GitHub
+
+Once you've verified both agents locally (see [docs/USAGE.md](docs/USAGE.md)), publish so you can
+clone and run from any laptop. A **private** repo is recommended since the agents inspect your cloud.
+
+```bash
+# from the azure-agents/ directory
+git status                      # confirm .env is NOT listed
+git remote add origin https://github.com/<you>/azure-agents.git
+git branch -M main
+git push -u origin main
+```
+
+On a fresh laptop later:
+```bash
+git clone https://github.com/<you>/azure-agents.git
+cd azure-agents
+cp .env.example .env            # add your ANTHROPIC_API_KEY
+az login
+docker compose run --rm agent           # or: data-architect
+```
