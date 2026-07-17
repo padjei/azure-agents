@@ -1,0 +1,144 @@
+{
+  "properties": {
+    "displayName": "Deploy Synapse diagnostic settings to Log Analytics (HITRUST r2)",
+    "policyType": "Custom",
+    "mode": "Indexed",
+    "description": "Ensures every Azure Synapse workspace streams IntegrationPipelineRuns, IntegrationActivityRuns, and SynapseRbacOperations to a central Log Analytics workspace. Auto-deploys the diagnostic setting when it is missing, closing the timing gap that leaves audit periods without evidence.",
+    "metadata": {
+      "category": "Monitoring",
+      "version": "1.0.0"
+    },
+    "parameters": {
+      "logAnalyticsWorkspaceId": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Log Analytics workspace resource ID",
+          "description": "Target workspace all Synapse diagnostics are sent to.",
+          "strongType": "omsWorkspace"
+        }
+      },
+      "diagnosticSettingName": {
+        "type": "String",
+        "defaultValue": "hitrust-r2-synapse-diagnostics",
+        "metadata": {
+          "displayName": "Diagnostic setting name"
+        }
+      },
+      "effect": {
+        "type": "String",
+        "defaultValue": "DeployIfNotExists",
+        "allowedValues": [
+          "DeployIfNotExists",
+          "AuditIfNotExists",
+          "Disabled"
+        ],
+        "metadata": {
+          "displayName": "Effect",
+          "description": "DeployIfNotExists auto-remediates; AuditIfNotExists only reports."
+        }
+      }
+    },
+    "policyRule": {
+      "if": {
+        "field": "type",
+        "equals": "Microsoft.Synapse/workspaces"
+      },
+      "then": {
+        "effect": "[parameters('effect')]",
+        "details": {
+          "type": "Microsoft.Insights/diagnosticSettings",
+          "name": "[parameters('diagnosticSettingName')]",
+          "roleDefinitionIds": [
+            "/providers/Microsoft.Authorization/roleDefinitions/749f88d5-cbae-40b8-bcfc-e573ddc772fa",
+            "/providers/Microsoft.Authorization/roleDefinitions/92aaf0da-9dab-42b6-94a3-d43ce8d16293"
+          ],
+          "existenceCondition": {
+            "allOf": [
+              {
+                "field": "Microsoft.Insights/diagnosticSettings/workspaceId",
+                "equals": "[parameters('logAnalyticsWorkspaceId')]"
+              },
+              {
+                "count": {
+                  "field": "Microsoft.Insights/diagnosticSettings/logs[*]",
+                  "where": {
+                    "allOf": [
+                      {
+                        "field": "Microsoft.Insights/diagnosticSettings/logs[*].enabled",
+                        "equals": "true"
+                      },
+                      {
+                        "field": "Microsoft.Insights/diagnosticSettings/logs[*].category",
+                        "in": [
+                          "IntegrationPipelineRuns",
+                          "IntegrationActivityRuns",
+                          "SynapseRbacOperations"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "equals": 3
+              }
+            ]
+          },
+          "deployment": {
+            "properties": {
+              "mode": "incremental",
+              "template": {
+                "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                "contentVersion": "1.0.0.0",
+                "parameters": {
+                  "resourceName": {
+                    "type": "string"
+                  },
+                  "logAnalyticsWorkspaceId": {
+                    "type": "string"
+                  },
+                  "diagnosticSettingName": {
+                    "type": "string"
+                  }
+                },
+                "resources": [
+                  {
+                    "type": "Microsoft.Synapse/workspaces/providers/diagnosticSettings",
+                    "apiVersion": "2021-05-01-preview",
+                    "name": "[concat(parameters('resourceName'), '/Microsoft.Insights/', parameters('diagnosticSettingName'))]",
+                    "properties": {
+                      "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                      "logs": [
+                        {
+                          "category": "IntegrationPipelineRuns",
+                          "enabled": true
+                        },
+                        {
+                          "category": "IntegrationActivityRuns",
+                          "enabled": true
+                        },
+                        {
+                          "category": "SynapseRbacOperations",
+                          "enabled": true
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "parameters": {
+                "resourceName": {
+                  "value": "[field('name')]"
+                },
+                "logAnalyticsWorkspaceId": {
+                  "value": "[parameters('logAnalyticsWorkspaceId')]"
+                },
+                "diagnosticSettingName": {
+                  "value": "[parameters('diagnosticSettingName')]"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

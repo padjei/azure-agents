@@ -33,6 +33,7 @@ from azure.mgmt.policyinsights import PolicyInsightsClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.keyvault import KeyVaultManagementClient
 from azure.mgmt.security import SecurityCenter
+from azure.mgmt.monitor import MonitorManagementClient
 from langchain_core.tools import tool
 from langchain_anthropic import ChatAnthropic
 from langgraph.prebuilt import create_react_agent
@@ -62,6 +63,7 @@ try:
     policy_client = PolicyInsightsClient(credential)
     network_client = NetworkManagementClient(credential, ACTIVE_SUBSCRIPTION_ID)
     kv_client = KeyVaultManagementClient(credential, ACTIVE_SUBSCRIPTION_ID)
+    monitor_client = MonitorManagementClient(credential, ACTIVE_SUBSCRIPTION_ID)
 
     # Defender for Cloud client construction varies across SDK versions; keep it
     # best-effort so a signature mismatch never kills the whole agent.
@@ -240,6 +242,76 @@ def check_policy_compliance() -> str:
         return f"Error extracting policy insights: {str(e)}"
 
 
+# Categories that HITRUST r2 requires for Synapse ingestion/ETL boundary auditing.
+REQUIRED_SYNAPSE_LOG_CATEGORIES = {
+    "IntegrationPipelineRuns",
+    "IntegrationActivityRuns",
+    "SynapseRbacOperations",
+}
+
+
+@tool
+def audit_synapse_diagnostic_settings() -> str:
+    """
+    READ-ONLY HITRUST r2 check. For every Azure Synapse workspace in the subscription,
+    verifies that a Diagnostic Setting streams the required audit log categories
+    (IntegrationPipelineRuns, IntegrationActivityRuns, SynapseRbacOperations) to a
+    Log Analytics workspace and, ideally, to an immutable storage archive.
+    Flags any workspace missing logging or missing categories. Does NOT modify anything;
+    remediation is handled by the DeployIfNotExists policy under infra/policy/.
+    """
+    try:
+        workspaces = resource_client.resources.list(
+            filter="resourceType eq 'Microsoft.Synapse/workspaces'"
+        )
+        report = []
+        found_any = False
+
+        for ws in workspaces:
+            found_any = True
+            settings = monitor_client.diagnostic_settings.list(ws.id)
+            ws_settings = list(getattr(settings, "value", None) or settings)
+
+            enabled_categories = set()
+            to_log_analytics = False
+            to_storage_archive = False
+
+            for s in ws_settings:
+                if getattr(s, "workspace_id", None):
+                    to_log_analytics = True
+                if getattr(s, "storage_account_id", None):
+                    to_storage_archive = True
+                for log in (s.logs or []):
+                    if log.enabled and log.category in REQUIRED_SYNAPSE_LOG_CATEGORIES:
+                        enabled_categories.add(log.category)
+
+            missing = sorted(REQUIRED_SYNAPSE_LOG_CATEGORIES - enabled_categories)
+            compliant = (not missing) and to_log_analytics
+
+            report.append({
+                "SynapseWorkspace": ws.name,
+                "ResourceGroup": ws.id.split("/")[4] if "/" in ws.id else "Unknown",
+                "DiagnosticSettingsCount": len(ws_settings),
+                "RequiredCategoriesEnabled": sorted(enabled_categories),
+                "MissingCategories": missing,
+                "StreamsToLogAnalytics": to_log_analytics,
+                "StreamsToImmutableArchive": to_storage_archive,
+                "HitrustR2Status": "PASSED" if compliant else "FAILED - diagnostic logging incomplete",
+                "Recommendation": (
+                    "Compliant."
+                    if compliant
+                    else "Deploy the HITRUST r2 diagnostic setting (see infra/bicep or infra/cli) "
+                         "and assign the DeployIfNotExists policy under infra/policy/ to prevent drift."
+                ),
+            })
+
+        if not found_any:
+            return "No Azure Synapse workspaces found in this subscription."
+        return json.dumps(report, indent=2)
+    except Exception as e:  # noqa: BLE001
+        return f"Error auditing Synapse diagnostic settings: {str(e)}"
+
+
 @tool
 def generate_remediation_policy(framework_name: str) -> str:
     """
@@ -294,6 +366,7 @@ security_tools = [
     audit_network_security_groups,
     audit_key_vault_access_and_networking,
     extract_defender_for_cloud_alerts,
+    audit_synapse_diagnostic_settings,
 ]
 
 # Instantiate Claude to drive complex security and audit topology reasoning.
@@ -311,7 +384,8 @@ system_prompt = (
     "Operational Instructions:\n"
     "1. When tasked to run a comprehensive check, call your diagnostic tools systematically.\n"
     "2. Correlate insights (e.g., if a Key Vault has public access enabled AND an NSG has wide inbound rules, explicitly flag this as a critical path to PHI compromise).\n"
-    "3. When mapping to regulatory standards like HITRUST r2, output crisp structural remediation scripts, explicit Azure CLI commands, or Azure Policy templates to implement guardrails."
+    "3. For HITRUST r2 audit-logging controls, use audit_synapse_diagnostic_settings to VERIFY (read-only) that Synapse workspaces stream the required categories to Log Analytics and an immutable archive. You do not enable logging yourself; when it is missing, direct the user to the infra/ bootstrap and the DeployIfNotExists enforcement policy.\n"
+    "4. When mapping to regulatory standards like HITRUST r2, output crisp structural remediation scripts, explicit Azure CLI commands, or Azure Policy templates to implement guardrails."
 )
 
 def _build_react_agent(model, tools, prompt):

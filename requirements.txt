@@ -12,6 +12,7 @@ azure-mgmt-policyinsights>=1.1.0b4,<2
 azure-mgmt-network>=26,<28
 azure-mgmt-keyvault>=10.3,<11
 azure-mgmt-security>=6,<7
+azure-mgmt-monitor>=6,<7
 
 # Local secret loading
 python-dotenv>=1.0,<2
