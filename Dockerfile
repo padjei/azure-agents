@@ -15,8 +15,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy the actual AI agent source code into the container
-COPY azure_security_agent.py .
+# Copy the AI agent source code into the container
+COPY azure_security_agent.py data_architect_agent.py ./
 
-# Run the script interactively when the container fires up
+# Default to the security agent; override in docker-compose (or `docker run`) to
+# launch the data architect: `command: python data_architect_agent.py`
 CMD ["python", "azure_security_agent.py"]
