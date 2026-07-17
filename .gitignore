@@ -1,0 +1,17 @@
+# Local Environment Configuration (NEVER commit secrets)
+.env
+
+# Python Caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual environments
+.venv/
+env/
+
+# Local Azure/IDE caches
+.azure/
+.vscode/

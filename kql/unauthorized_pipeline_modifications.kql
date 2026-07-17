@@ -1,0 +1,11 @@
+// Identify Unauthorized Pipeline / Linked Service Modifications
+// Detects modifications to your ingestion or ETL structure by users attempting
+// to redirect data pipelines to unapproved destinations.
+// HITRUST r2: Data Ingestion Integrity + Cross-System Boundary Auditing.
+AzureActivity
+| where ResourceProvider == "Microsoft.Synapse"
+| where OperationNameValue has "workspaces/pipelines/write"
+    or OperationNameValue has "workspaces/linkedservices/write"
+| project TimeGenerated, OperationNameValue, ActivityStatusValue, Caller, CallerIpAddress
+| where ActivityStatusValue == "Success"
+| order by TimeGenerated desc

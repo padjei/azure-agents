@@ -1,0 +1,17 @@
+# Core AI orchestration. Ranges chosen so langchain-core resolves consistently
+# across all three packages (the langgraph 0.2.x line still supports the
+# create_react_agent `state_modifier` argument used below).
+langchain>=0.3,<0.4
+langchain-anthropic>=0.3,<0.4
+langgraph>=0.2.28,<0.3
+
+# Azure SDKs
+azure-identity>=1.17,<2
+azure-mgmt-resource>=23,<24
+azure-mgmt-policyinsights>=1.1.0b4,<2
+azure-mgmt-network>=26,<28
+azure-mgmt-keyvault>=10.3,<11
+azure-mgmt-security>=6,<7
+
+# Local secret loading
+python-dotenv>=1.0,<2

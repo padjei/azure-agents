@@ -1,0 +1,13 @@
+// Monitor ETL Egress & Data Volume Anomalies
+// Tracks data pushed to external destinations to identify sudden, malicious
+// bulk exfiltration spikes from Azure Synapse ETL/ELT pipelines.
+// HITRUST r2: Data Exfiltration/Leakage monitoring (Domains 09 & 10).
+SynapseIntegrationActivityRuns
+| where ActivityType == "Copy"
+| extend DestinationType = tostring(Output.dataWritten)
+| project TimeGenerated, PipelineName, ActivityName,
+          RowsRead = tolong(Output.rowsRead),
+          RowsWritten = tolong(Output.rowsCopied),
+          BytesTransferred = tolong(Output.dataRead)
+| where BytesTransferred > 5000000000 // Flag transfers exceeding 5GB (adjust baseline as needed)
+| order by TimeGenerated desc

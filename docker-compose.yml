@@ -1,0 +1,15 @@
+services:
+  agent:
+    build: .
+    image: azure-sec-agent:latest
+    container_name: azure_security_ai_agent
+    # Allows the interactive terminal loop to remain open for chatting with Claude
+    stdin_open: true
+    tty: true
+    environment:
+      # Automatically passes your local laptop's host environment variables into Docker
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-6}
+    volumes:
+      # Mounts your local Azure CLI token cache directly into the container's root profile
+      - ~/.azure:/root/.azure
