@@ -1,134 +1,130 @@
-# Using the agents (and how to try them before deploying)
+# Using the agents
 
-This walks you through running both agents **locally on your laptop first**, confirming they work
-against your Azure subscription, and only then pushing to GitHub. Do this on the machine you built
-them on before you rely on cloning to a fresh laptop.
+There are two ways to run this repo. **Mode ① (Claude Code) is keyless and recommended.** Mode ②
+(standalone Python) is the original API-key path, kept as an alternative.
 
 ---
 
-## 0. Prerequisites
+## Mode ① — Claude Code (keyless, recommended)
 
+Claude comes from your **Claude subscription** (via the Claude Code runtime) — **no
+`ANTHROPIC_API_KEY`**. Azure comes from your **`az login`** session. Nothing to build.
+
+### Prerequisites
 | Need | Why | Check |
 | ---- | --- | ----- |
-| **Docker Desktop** | Runs the agents without installing Python locally | `docker version` |
-| **Azure CLI** | Provides the login the agents reuse | `az version` |
-| **Anthropic API key** | Powers Claude reasoning | starts with `sk-ant-` |
-| **Azure permissions** | The agents only see what your identity can | at least **Reader** on the subscription; **Contributor** to deploy `infra/` |
+| **Claude Code** | The runtime that *is* Claude here | `claude --version` (install: `npm i -g @anthropic-ai/claude-code`) — or a Claude Code IDE extension |
+| **Signed-in Claude account** | Provides Claude, keyless | Claude Code prompts you to log in on first run |
+| **Azure CLI** | Azure access the agents reuse | `az version` |
+| **Node.js** | Runs the safety/session hooks | `node --version` |
+| **Azure permissions** | Agents see only what you can | Reader on the subscription; Contributor to apply `infra/` |
 
-> The agents authenticate to Azure via `DefaultAzureCredential`, which reuses your `az login`
-> session. They never store Azure secrets. The only secret is your Anthropic key, kept in a local,
-> git-ignored `.env`.
+### Run it
+```bash
+az login                     # sign in to Azure
+cd azure-agents
+claude                       # opens Claude Code in this repo
+```
+
+Then use slash commands (or plain English):
+
+```
+/audit-security                                   # full read-only security & compliance audit
+/check-hitrust                                    # verify Synapse HITRUST r2 diagnostic logging
+/design-data design a star schema for retail sales at order-line grain
+/generate-policy required_tags for HITRUST r2     # emit an Azure Policy JSON
+/setup-diagnostics                                # guided infra/ bootstrap + enforcement policy
+```
+
+Or spawn a sub-agent directly, e.g. *"Use the data-architect agent to assess my data estate and
+recommend a lakehouse."*
+
+### What loads automatically
+- `CLAUDE.md` — project context
+- `.claude/agents/` — `security-auditor`, `data-architect`, `hitrust-compliance`
+- `.claude/skills/` — 6 Azure knowledge skills (auto-discovered)
+- `.claude/hooks/pre-tool-safety.mjs` — **blocks destructive commands** (resource deletes, removing
+  diagnostic settings/policies, `rm -rf`, `DROP`/`TRUNCATE`)
+- `.claude/settings.json` — model (`claude-opus-4-8`), permissions (allow/deny), adaptive thinking
+
+The agents are **read-only**: they audit and design, then hand you exact `az`/Bicep commands to run
+yourself. Session summaries are written to `reports/output/session-logs/` (git-ignored).
+
+### Verify it's wired up
+```bash
+az account show -o json                              # correct subscription?
+node .claude/hooks/pre-tool-safety.mjs <<< '{"tool_input":{"command":"az group delete -n x"}}'
+#   ^ should print a JSON "deny" decision — proof the safety hook works
+```
 
 ---
 
-## 1. One-time setup
+## Mode ② — Standalone Python (needs an Anthropic API key)
 
+Use this if you're not running Claude Code. It calls the Anthropic API directly, so it needs a key.
+
+### Setup
 ```bash
 cd azure-agents
-
-# Anthropic key -> local .env (git-ignored; never committed)
-cp .env.example .env
-#   edit .env and set: ANTHROPIC_API_KEY=sk-ant-...
-
-# Sign in to Azure (opens a browser)
+cp .env.example .env          # set ANTHROPIC_API_KEY=sk-ant-...  (git-ignored)
 az login
-
-# Confirm which subscription you're pointed at — the agents use the FIRST one returned
-az account show --output table
 ```
 
-If you have multiple subscriptions and want a specific one:
+### Run with Docker (no local Python)
 ```bash
-az account set --subscription "<subscription-name-or-id>"
+docker compose build
+docker compose run --rm agent            # security & compliance agent
+docker compose run --rm data-architect   # data architect agent
+```
+
+### Run with local Python (3.11 / 3.12)
+```bash
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+export ANTHROPIC_API_KEY="sk-ant-..."
+az login
+python azure_security_agent.py     # or: python data_architect_agent.py
 ```
 
 ---
 
-## 2. Build once, confirm it starts
+## Example prompts (either mode)
 
-```bash
-docker compose build          # builds the shared azure-agents image
+**Security / compliance**
+```
+Run a full scan of my network layers and secrets storage. What breaches HITRUST?
+Verify that all my Synapse workspaces have HITRUST r2 diagnostic logging.
+Generate an Azure Policy that denies NSG rules open to the internet.
 ```
 
-A successful build means every dependency resolved. If you don't have Docker, use the
-[local Python path](../README.md#quick-start-local-python) instead (Python 3.11/3.12).
-
----
-
-## 3. Run the Security & Compliance agent
-
-```bash
-docker compose run --rm agent
+**Data architecture**
 ```
-
-You'll get an interactive prompt. Try, one line at a time:
-
-```
-Azure-Security-Core-Agent > Audit my resource groups for compliance tags.
-Azure-Security-Core-Agent > Run a full scan on my network layers and secrets storage. What breaches HITRUST?
-Azure-Security-Core-Agent > Verify that all my Synapse workspaces have HITRUST r2 diagnostic logging.
-Azure-Security-Core-Agent > Generate an Azure Policy that denies NSG rules open to the internet.
-Azure-Security-Core-Agent > quit
-```
-
-What to expect: Claude calls the relevant read-only tools, correlates findings, and prints a
-findings/remediation block. It **audits and drafts** — it does not change your Azure resources.
-
----
-
-## 4. Run the Data Architect agent
-
-```bash
-docker compose run --rm data-architect
-```
-
-```
-Azure-Data-Architect > Assess my current data estate and highlight gaps.
-Azure-Data-Architect > Recommend a medallion lakehouse design for the claims domain, sources Guidewire and Salesforce.
-Azure-Data-Architect > Design a star schema for retail sales at order-line grain with measures quantity, unit_price, discount.
-Azure-Data-Architect > Blueprint a streaming ingestion pipeline from Event Hub into a Gold Delta table.
-Azure-Data-Architect > quit
-```
-
-What to expect: it inventories your data services first (discovery tools), then emits concrete
-artifacts — lakehouse zone layouts, a Kimball star schema with Synapse-optimized DDL, and pipeline
-blueprints — always folding in security and observability.
-
----
-
-## 5. Switching the Claude model (optional)
-
-Both agents default to `claude-sonnet-4-6`. For deeper reasoning on complex designs/audits:
-
-```bash
-# in .env
-CLAUDE_MODEL=claude-opus-4-8
+Assess my current data estate and recommend a medallion lakehouse for the claims domain.
+Design a star schema for retail sales at order-line grain, then a batch ingestion pipeline
+from on-prem SQL Server into a Synapse dedicated SQL pool.
 ```
 
 ---
 
-## 6. Pre-deployment checklist
+## Pre-deployment checklist
 
-Before you push to GitHub, confirm:
+- [ ] Mode ①: `claude` opens the repo, `/audit-security` runs, safety hook denies a test delete
+- [ ] Mode ②: `docker compose run --rm agent` (and `data-architect`) start and answer a prompt
+- [ ] `git status` shows **no `.env`** staged (`git check-ignore .env` → prints `.env`)
+- [ ] `reports/output/` is git-ignored (not committing session logs)
+- [ ] Your `az login` scope is correct (read-only tools returned data)
 
-- [ ] `docker compose build` succeeds
-- [ ] `docker compose run --rm agent` starts, answers a prompt, and exits on `quit`
-- [ ] `docker compose run --rm data-architect` does the same
-- [ ] `git status` shows **no `.env`** staged (run `git check-ignore .env` → should print `.env`)
-- [ ] `.env.example` is committed but contains only placeholders
-- [ ] You're comfortable the read-only tools returned data (i.e. your `az login` scope is correct)
-
-Then follow **Deploy to GitHub** in the [README](../README.md#deploy-to-github).
+Then push (see the README's **Deploy to GitHub**).
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Likely cause / fix |
-| ------- | ------------------ |
-| `No active Azure subscriptions found` | Not logged in — run `az login`; check `az account show`. |
-| `Authentication ... Failed` on Azure | Token expired or wrong tenant — `az login --tenant <tenant-id>`. |
-| Empty audit results | Your identity lacks read access to those resources — grant Reader on the subscription. |
-| Anthropic 401 / auth error | `ANTHROPIC_API_KEY` missing or wrong in `.env`. |
-| Docker can't read `~/.azure` | Ensure you ran `az login` on the **host**; the compose file mounts `~/.azure` read-through. |
-| Local `pip install` fails on Python 3.14 | Use Python 3.11/3.12, or just use Docker. |
+| Symptom | Fix |
+| ------- | --- |
+| `No active Azure subscriptions found` | `az login`; check `az account show`. |
+| Claude Code not authenticated | Launch `claude` and complete the login prompt (subscription account). |
+| Safety hook didn't block a delete | Ensure `node` is installed and `.claude/settings.json` hooks point at `${CLAUDE_PROJECT_DIR}/.claude/hooks/`. |
+| Empty audit results | Your identity lacks read access — grant Reader on the subscription. |
+| (Mode ②) Anthropic 401 | `ANTHROPIC_API_KEY` missing/wrong in `.env`. |
+| (Mode ②) `pip install` fails on Python 3.14 | Use Python 3.11/3.12, or use Docker. |

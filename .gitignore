@@ -15,3 +15,7 @@ env/
 # Local Azure/IDE caches
 .azure/
 .vscode/
+
+# Claude Code local overrides + generated session output
+.claude/settings.local.json
+reports/output/

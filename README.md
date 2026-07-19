@@ -1,27 +1,30 @@
 # Claude-Powered Azure Agents
 
-Terminal-runnable AI agents for Azure, driven by **Anthropic Claude** via **LangChain / LangGraph**.
-Azure access uses `DefaultAzureCredential`, so they authenticate from your existing `az login`
-session — **no secrets are stored in code**. Two agents share one runtime/image:
+AI agents for Azure **security/compliance auditing** and **data-platform architecture**, covering
+NSGs, Key Vault, Defender for Cloud, Azure Policy, and HITRUST CSF r2 Synapse logging on the security
+side, and medallion lakehouses, Kimball dimensional models + Synapse DDL, and ingestion pipelines on
+the data side.
 
-1. **Security & Compliance agent** (`azure_security_agent.py`) — audits an Azure subscription's
-   security posture and produces remediation / Azure Policy templates for frameworks such as
-   **HITRUST CSF r2**.
-2. **Data Architect agent** (`data_architect_agent.py`) — assesses your data estate and designs
-   scalable, secure data solutions (lakehouse layouts, dimensional models + DDL, ingestion pipelines).
+There are **two ways to run**, sharing the same knowledge, docs, `kql/`, and `infra/`:
 
-> **New here?** Read **[docs/USAGE.md](docs/USAGE.md)** for a step-by-step guide to running both
-> agents locally and verifying them **before** you deploy to GitHub.
+| Mode | Claude auth | How Azure is reached | When |
+| ---- | ----------- | -------------------- | ---- |
+| **① Claude Code (recommended, keyless)** | Your **Claude subscription** (no `ANTHROPIC_API_KEY`) | `az` CLI via Bash | Open the repo in Claude Code; use slash commands / agents |
+| **② Standalone Python** | **`ANTHROPIC_API_KEY`** (Anthropic API) | Azure SDK + `DefaultAzureCredential` | Run the `*.py` agents directly / in Docker |
+
+> **New here?** See **[docs/USAGE.md](docs/USAGE.md)** for both modes step by step.
 
 ## What's inside
 
-| File | Purpose |
+| Path | Purpose |
 | ---- | ------- |
-| `azure_security_agent.py` | **Security agent.** Audits NSGs, Key Vault, Defender for Cloud, Resource Groups, Azure Policy, and Synapse diagnostic logging; generates remediation policy JSON. |
-| `data_architect_agent.py` | **Data Architect agent.** Discovers the data estate and designs medallion lakehouses, Kimball star schemas + Synapse DDL, and ETL/ELT pipeline blueprints. |
-| `requirements.txt` | Pinned Python dependencies. |
-| `Dockerfile` / `docker-compose.yml` | Containerized runtime — run on any laptop with only Docker. |
-| `docs/USAGE.md` | Step-by-step usage + a pre-deployment checklist (try locally before pushing). |
+| `.claude/` | **Claude Code setup (keyless mode).** `agents/` (security-auditor, data-architect, hitrust-compliance), `commands/` (slash commands), `skills/` (Azure knowledge), `hooks/` (safety + session log), `settings.json`. |
+| `CLAUDE.md` | Project context Claude Code loads automatically. |
+| `azure_security_agent.py` | **Python security agent.** Audits NSGs, Key Vault, Defender, RGs, Azure Policy, Synapse logging; generates remediation policy JSON. |
+| `data_architect_agent.py` | **Python data architect agent.** Discovers the estate; designs lakehouses, star schemas + DDL, pipelines. |
+| `requirements.txt` | Pinned Python dependencies (mode ② only). |
+| `Dockerfile` / `docker-compose.yml` | Containerized runtime for mode ② — run with only Docker. |
+| `docs/USAGE.md` | Step-by-step usage for both modes + a pre-deployment checklist. |
 | `docs/hitrust_r2_retention_framework.md` | HITRUST r2 Synapse hardening, retention, and PRISMA maturity guidance. |
 | `kql/*.kql` | Log Analytics audit queries for Synapse ETL egress and pipeline tampering. |
 | `infra/` | Bicep + CLI bootstrap and a DeployIfNotExists policy that establish and enforce Synapse diagnostic logging (see `infra/README.md`). |
@@ -65,7 +68,40 @@ See [`infra/README.md`](infra/README.md) for the full runbook.
 
 ---
 
-## Quick start (Docker — recommended)
+## ① Run keyless with Claude Code (recommended)
+
+No API key, no Python, no Docker. Claude comes from your Claude subscription; Azure comes from `az`.
+
+```bash
+# 1. Sign in to Azure (the agents reuse this session)
+az login
+
+# 2. Open this repo in Claude Code (CLI shown; the IDE extensions work too)
+cd azure-agents
+claude
+```
+
+Then drive it with slash commands (or just ask in natural language):
+
+```
+/audit-security                 # full read-only security & compliance audit
+/check-hitrust                  # verify Synapse HITRUST r2 diagnostic logging
+/design-data design a medallion lakehouse for the claims domain
+/generate-policy network_boundary for HITRUST r2
+/setup-diagnostics              # guided infra/ bootstrap + enforcement policy
+```
+
+Claude Code auto-loads `CLAUDE.md`, the three sub-agents in `.claude/agents/`, the six skills in
+`.claude/skills/`, and a **safety hook** that blocks destructive Azure commands (resource deletes,
+removing diagnostic settings/policies, `rm -rf`). The agents are **read-only** — they audit and
+design, and hand you exact `az`/Bicep commands to run yourself.
+
+> Requires the Claude Code CLI (`npm i -g @anthropic-ai/claude-code`) or an IDE extension, signed in
+> with your Claude account. This mode needs **no `ANTHROPIC_API_KEY`**.
+
+---
+
+## ② Run as standalone Python (Docker — needs an API key)
 
 You only need **Docker Desktop** and the **Azure CLI** installed. No local Python required.
 
@@ -126,12 +162,17 @@ Type `quit` or `exit` to end the session.
 
 ## Choosing the Claude model
 
-Defaults to `claude-sonnet-4-6`. Override without editing code via the `CLAUDE_MODEL` env var
-(e.g. `CLAUDE_MODEL=claude-opus-4-8` for deeper reasoning).
+- **Claude Code mode ①:** set in `.claude/settings.json` (`"model": "claude-opus-4-8"`).
+- **Python mode ②:** defaults to `claude-sonnet-4-6`; override via the `CLAUDE_MODEL` env var
+  (e.g. `CLAUDE_MODEL=claude-opus-4-8`).
 
 ## Security notes
 
-- `.env` is git-ignored — your API key never reaches GitHub. Commit only `.env.example`.
+- **Keyless mode ①** uses your Claude subscription (no API key) and `az login` for Azure — no
+  secrets stored anywhere. A safety hook (`.claude/hooks/pre-tool-safety.mjs`) blocks destructive
+  Azure/filesystem commands.
+- **Mode ②** keeps your Anthropic key in `.env`, which is git-ignored — it never reaches GitHub
+  (commit only `.env.example`).
 - The agents perform **read-only** discovery/audits; they draft policy JSON and design artifacts but do not change your Azure resources.
 - Azure permissions come from your signed-in identity; the agents can only see what you can.
 

@@ -1,0 +1,61 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "WebFetch(*)",
+      "WebSearch(*)"
+    ],
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(rm -r*)",
+      "Bash(rmdir*)",
+      "Bash(az group delete*)",
+      "Bash(az resource delete*)",
+      "Bash(az storage account delete*)",
+      "Bash(az keyvault delete*)",
+      "Bash(az keyvault purge*)",
+      "Bash(az synapse workspace delete*)",
+      "Bash(az sql server delete*)",
+      "Bash(az sql db delete*)",
+      "Bash(az monitor diagnostic-settings delete*)",
+      "Bash(az policy assignment delete*)",
+      "Bash(az policy definition delete*)",
+      "Bash(az account clear*)"
+    ]
+  },
+  "autoApprove": true,
+  "model": "claude-opus-4-8",
+  "thinking": { "type": "adaptive" },
+  "env": {
+    "AZURE_CORE_OUTPUT": "json",
+    "AZURE_CORE_ONLY_SHOW_ERRORS": "true"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-tool-safety.mjs"]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/session-log.mjs"]
+          }
+        ]
+      }
+    ]
+  }
+}
