@@ -10,7 +10,7 @@ There are **two ways to run**, sharing the same knowledge, docs, `kql/`, and `in
 | Mode | Claude auth | How Azure is reached | When |
 | ---- | ----------- | -------------------- | ---- |
 | **① Claude Code (recommended, keyless)** | Your **Claude subscription** (no `ANTHROPIC_API_KEY`) | `az` CLI via Bash | Open the repo in Claude Code; use slash commands / agents |
-| **② Standalone Python** | **`ANTHROPIC_API_KEY`** (Anthropic API) | Azure SDK + `DefaultAzureCredential` | Run the `*.py` agents directly / in Docker |
+| **② Standalone Python (keyless)** | Your **Claude subscription** via OAuth (`ant auth login`); `ANTHROPIC_API_KEY` optional | Azure SDK + `DefaultAzureCredential` | Run the `*.py` agents directly / in Docker |
 
 > **New here?** See **[docs/USAGE.md](docs/USAGE.md)** for both modes step by step.
 
@@ -101,29 +101,14 @@ design, and hand you exact `az`/Bicep commands to run yourself.
 
 ---
 
-## ② Run as standalone Python (Docker — needs an API key)
+## ② Run as standalone Python (keyless — your Claude subscription)
 
-You only need **Docker Desktop** and the **Azure CLI** installed. No local Python required.
+Claude is reached through your **Claude subscription** via OAuth — no API key. Sign in once with
+the `ant` CLI ([install](https://platform.claude.com/docs/en/api/sdks/cli)); the agents mint a
+short-lived token from that profile automatically. An `ANTHROPIC_API_KEY` still works if set — it
+overrides the subscription.
 
-```bash
-# 1. Authenticate to Azure on your host machine
-az login
-
-# 2. Put your Anthropic key in a local .env file
-cp .env.example .env
-#   then edit .env and set ANTHROPIC_API_KEY=sk-ant-...
-
-# 3. Build + launch an interactive agent (compose reads ANTHROPIC_API_KEY from .env)
-docker compose run --rm agent            # security & compliance agent
-docker compose run --rm data-architect   # data architect agent
-```
-
-`--rm` auto-removes the container on exit. The compose file mounts `~/.azure` into the container
-so `DefaultAzureCredential` reuses your host `az login` — no second login inside Docker.
-
-## Quick start (local Python)
-
-> Requires **Python 3.11 or 3.12** (the pinned dependencies predate Python 3.14).
+**Local Python** (requires **Python 3.11 or 3.12** — the pinned dependencies predate Python 3.14):
 
 ```bash
 python3.11 -m venv .venv
@@ -131,12 +116,27 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-export ANTHROPIC_API_KEY="sk-ant-..."   # or use the .env file
-az login
+az login          # Azure access (DefaultAzureCredential reuses this session)
+ant auth login    # Claude access via your Claude subscription (OAuth)
 
 python azure_security_agent.py     # security & compliance agent
 python data_architect_agent.py     # data architect agent
 ```
+
+**Docker** (only **Docker Desktop** + **Azure CLI** + `ant` on the host — no local Python). The
+container has no `ant` CLI, so pass a host-minted OAuth token in via the environment:
+
+```bash
+az login
+eval "$(ant auth print-credentials --env)"   # exports ANTHROPIC_AUTH_TOKEN for compose
+#   (or instead put ANTHROPIC_API_KEY=sk-ant-... in a local .env — cp .env.example .env)
+
+docker compose run --rm agent            # security & compliance agent
+docker compose run --rm data-architect   # data architect agent
+```
+
+`--rm` auto-removes the container on exit. The compose file mounts `~/.azure` into the container
+so `DefaultAzureCredential` reuses your host `az login` — no second login inside Docker.
 
 ## Example prompts
 
@@ -168,11 +168,11 @@ Type `quit` or `exit` to end the session.
 
 ## Security notes
 
-- **Keyless mode ①** uses your Claude subscription (no API key) and `az login` for Azure — no
-  secrets stored anywhere. A safety hook (`.claude/hooks/pre-tool-safety.mjs`) blocks destructive
-  Azure/filesystem commands.
-- **Mode ②** keeps your Anthropic key in `.env`, which is git-ignored — it never reaches GitHub
-  (commit only `.env.example`).
+- **Both modes are keyless by default** — Claude comes from your subscription (mode ① via Claude
+  Code, mode ② via `ant auth login` OAuth) and Azure from `az login`, so no secrets are stored. A
+  safety hook (`.claude/hooks/pre-tool-safety.mjs`) blocks destructive Azure/filesystem commands.
+- If you opt into an `ANTHROPIC_API_KEY` (mode ②), keep it in `.env`, which is git-ignored — it
+  never reaches GitHub (commit only `.env.example`). OAuth tokens are short-lived and never stored.
 - The agents perform **read-only** discovery/audits; they draft policy JSON and design artifacts but do not change your Azure resources.
 - Azure permissions come from your signed-in identity; the agents can only see what you can.
 

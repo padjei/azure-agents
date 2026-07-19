@@ -7,8 +7,13 @@ services:
     stdin_open: true
     tty: true
     environment:
-      # Automatically passes your local laptop's host environment variables into Docker
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Passes host Claude credentials into the container. Prefer subscription
+      # OAuth: on the host run `eval "$(ant auth print-credentials --env)"` first
+      # (sets ANTHROPIC_AUTH_TOKEN). ANTHROPIC_API_KEY is the API-key alternative.
+      # The container has no `ant` CLI, so one of these must be set on the host.
+      - ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-6}
     volumes:
       # Mounts your local Azure CLI token cache directly into the container's root profile

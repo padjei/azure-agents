@@ -14,19 +14,26 @@ It has two kinds of tools:
   * Design (generative): produce concrete artifacts — lakehouse layouts, star
     schemas + DDL, and ingestion pipeline blueprints.
 
-Reasoning is driven by Anthropic Claude via LangChain/LangGraph. Azure access
-uses DefaultAzureCredential (your existing `az login` session); no secrets in code.
+Reasoning is driven by Anthropic Claude via LangChain/LangGraph. Both Claude and
+Azure are reached without secrets in code: Claude via your Claude subscription
+(OAuth, `ant auth login`) and Azure via DefaultAzureCredential (your `az login`
+session).
 
-Run:
-    az login
-    export ANTHROPIC_API_KEY="sk-ant-..."   # or put it in a local .env file
+Run (keyless):
+    az login          # Azure access (DefaultAzureCredential reuses this session)
+    ant auth login    # Claude access via your Claude subscription (OAuth)
     python data_architect_agent.py
+
+No ANTHROPIC_API_KEY is required. To use an Anthropic API key instead of the
+subscription, set ANTHROPIC_API_KEY (env var or a local .env file) and it wins.
 """
 
 import os
 import sys
 import json
 import re
+import shutil
+import subprocess
 from typing import Dict, Any, List
 
 from dotenv import load_dotenv
@@ -414,10 +421,64 @@ architect_tools = [
     design_ingestion_pipeline,
 ]
 
-llm = ChatAnthropic(
-    model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
-    temperature=0,
-)
+def _oauth_access_token():
+    """Mint a short-lived Claude OAuth access token from the `ant auth login`
+    profile. Returns None if the `ant` CLI is missing or you're not signed in."""
+    if not shutil.which("ant"):
+        return None
+    try:
+        result = subprocess.run(
+            ["ant", "auth", "print-credentials", "--access-token"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    token = result.stdout.strip()
+    return token if result.returncode == 0 and token else None
+
+
+def build_llm():
+    """Instantiate Claude, defaulting to your Claude subscription (OAuth) rather
+    than an API key. Model is overridable via the CLAUDE_MODEL env var.
+
+    Credential resolution, first match wins:
+      1. ANTHROPIC_API_KEY     — explicit Anthropic API-key override.
+      2. ANTHROPIC_AUTH_TOKEN  — a Bearer token already in the environment.
+      3. Claude subscription   — a short-lived OAuth token minted here from the
+                                 `ant auth login` profile via the `ant` CLI.
+    """
+    model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+
+    # Explicit API key wins if provided.
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return ChatAnthropic(model=model, temperature=0)
+
+    # Otherwise default to subscription OAuth. Mint a token from the signed-in
+    # profile unless one is already present in the environment.
+    if not os.getenv("ANTHROPIC_AUTH_TOKEN"):
+        token = _oauth_access_token()
+        if token:
+            os.environ["ANTHROPIC_AUTH_TOKEN"] = token
+
+    if not os.getenv("ANTHROPIC_AUTH_TOKEN"):
+        sys.exit(
+            "[!] No Claude credentials found.\n"
+            "    - Recommended: sign in with your Claude subscription -> run `ant auth login`.\n"
+            "    - Or set ANTHROPIC_API_KEY (Anthropic API key) in your environment or .env.\n"
+            "    Install the ant CLI: https://platform.claude.com/docs/en/api/sdks/cli"
+        )
+
+    # Hand the OAuth token to the SDK the way it expects: Authorization: Bearer
+    # (api_key=None disables x-api-key) plus the OAuth beta header for /v1/messages.
+    return ChatAnthropic(
+        model=model,
+        temperature=0,
+        anthropic_api_key=None,
+        default_headers={"anthropic-beta": "oauth-2025-04-20"},
+    )
+
+
+llm = build_llm()
 
 system_prompt = (
     "You are a Principal Azure Data Architect. You combine deep Azure platform expertise "

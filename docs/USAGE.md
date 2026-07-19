@@ -1,7 +1,8 @@
 # Using the agents
 
-There are two ways to run this repo. **Mode ① (Claude Code) is keyless and recommended.** Mode ②
-(standalone Python) is the original API-key path, kept as an alternative.
+There are two ways to run this repo, and **both are keyless** — Claude comes from your Claude
+subscription and Azure from `az login`. **Mode ① (Claude Code) is recommended.** Mode ② (standalone
+Python) reaches Claude via `ant auth login` OAuth, with `ANTHROPIC_API_KEY` as an optional override.
 
 ---
 
@@ -59,31 +60,38 @@ node .claude/hooks/pre-tool-safety.mjs <<< '{"tool_input":{"command":"az group d
 
 ---
 
-## Mode ② — Standalone Python (needs an Anthropic API key)
+## Mode ② — Standalone Python (keyless, your Claude subscription)
 
-Use this if you're not running Claude Code. It calls the Anthropic API directly, so it needs a key.
+Use this if you're not running Claude Code. It reaches Claude through your **Claude subscription**
+via OAuth — no API key. Sign in once with the `ant` CLI
+([install](https://platform.claude.com/docs/en/api/sdks/cli)); the agents mint a short-lived token
+from that profile automatically. Set `ANTHROPIC_API_KEY` only if you'd rather use an API key (it
+overrides the subscription).
 
 ### Setup
 ```bash
 cd azure-agents
-cp .env.example .env          # set ANTHROPIC_API_KEY=sk-ant-...  (git-ignored)
-az login
-```
-
-### Run with Docker (no local Python)
-```bash
-docker compose build
-docker compose run --rm agent            # security & compliance agent
-docker compose run --rm data-architect   # data architect agent
+az login          # Azure access (DefaultAzureCredential reuses this session)
+ant auth login    # Claude access via your Claude subscription (OAuth)
+#   API-key alternative instead of `ant auth login`:
+#   cp .env.example .env   # then set ANTHROPIC_API_KEY=sk-ant-...  (git-ignored)
 ```
 
 ### Run with local Python (3.11 / 3.12)
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY="sk-ant-..."
-az login
 python azure_security_agent.py     # or: python data_architect_agent.py
+```
+
+### Run with Docker (no local Python)
+The container has no `ant` CLI, so pass a host-minted OAuth token in via the environment:
+```bash
+docker compose build
+eval "$(ant auth print-credentials --env)"   # exports ANTHROPIC_AUTH_TOKEN for compose
+#   (or put ANTHROPIC_API_KEY in a local .env instead)
+docker compose run --rm agent            # security & compliance agent
+docker compose run --rm data-architect   # data architect agent
 ```
 
 ---
@@ -126,5 +134,7 @@ Then push (see the README's **Deploy to GitHub**).
 | Claude Code not authenticated | Launch `claude` and complete the login prompt (subscription account). |
 | Safety hook didn't block a delete | Ensure `node` is installed and `.claude/settings.json` hooks point at `${CLAUDE_PROJECT_DIR}/.claude/hooks/`. |
 | Empty audit results | Your identity lacks read access — grant Reader on the subscription. |
-| (Mode ②) Anthropic 401 | `ANTHROPIC_API_KEY` missing/wrong in `.env`. |
+| (Mode ②) `No Claude credentials found` | Run `ant auth login` (subscription), or set `ANTHROPIC_API_KEY`. Install the `ant` CLI if missing. |
+| (Mode ②) Anthropic 401 | OAuth token expired — re-run `ant auth login`; or a wrong/blank `ANTHROPIC_API_KEY` is set. |
+| (Mode ② Docker) `No Claude credentials found` | Container has no `ant`; run `eval "$(ant auth print-credentials --env)"` on the host first, or set `ANTHROPIC_API_KEY` in `.env`. |
 | (Mode ②) `pip install` fails on Python 3.14 | Use Python 3.11/3.12, or use Docker. |

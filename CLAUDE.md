@@ -5,9 +5,10 @@ architecture. It runs **keyless**: Claude is provided by the Claude Code runtime
 your Claude subscription), and Azure access comes from your `az login` session. **No
 `ANTHROPIC_API_KEY` is required for the Claude Code mode.**
 
-> There is also a legacy **standalone Python mode** (`azure_security_agent.py`,
-> `data_architect_agent.py`) that calls the Anthropic API directly and *does* need
-> `ANTHROPIC_API_KEY`. Prefer the Claude Code mode below.
+> There is also a **standalone Python mode** (`azure_security_agent.py`,
+> `data_architect_agent.py`). It is also keyless by default: Claude comes from your **Claude
+> subscription** via OAuth (`ant auth login`) — the agents mint a short-lived token from that
+> profile — and `ANTHROPIC_API_KEY` is only an optional override. Prefer the Claude Code mode below.
 
 ## How Azure access works (keyless)
 
